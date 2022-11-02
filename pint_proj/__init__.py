@@ -4,6 +4,13 @@ import projnames
 import pandas as pd
 import numpy as np
 import pint_pandas
+from pandas.api.extensions import (
+    ExtensionArray,
+    ExtensionDtype,
+    register_dataframe_accessor,
+    register_extension_dtype,
+    register_series_accessor,
+)
 
 ureg = pint.get_application_registry()
 
@@ -77,3 +84,21 @@ for epsg in epsgs:
 
 ureg.add_context(c)
 
+
+@register_series_accessor("proj")
+class PintProjSeriesAccessor(object):
+    def __init__(self, pandas_obj):
+        self.pandas_obj = pandas_obj
+        
+    def to_geoseries(self):
+        import geopandas as gpd
+        
+        crs = int(str(self.pandas_obj.dtype.units).split("epsg_")[1])
+        return gpd.GeoSeries(gpd.points_from_xy(
+            self.pandas_obj.apply(lambda q: q.magnitude.x),
+            self.pandas_obj.apply(lambda q: q.magnitude.y),
+            crs=crs))
+
+    def from_geoseries(self):
+        return pd.Series(self.pandas_obj.apply(lambda s: Coord(s.x, s.y)),
+                         dtype="pint[epsg_%s]" % self.pandas_obj.crs.to_epsg())
